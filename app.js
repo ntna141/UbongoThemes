@@ -107,7 +107,7 @@ app.post('/process_images', async (req, res) => {
       ...messages,
       {
         role: "system",
-        content: "You are a helpful teacher who will provide the optimal solution to the code and an explanation for that code for this challenge with NO usage example. Your answer should start with the data structure or technique used to solve this problem"
+        content: "You are a helpful teacher who will provide the optimal solution to the code and an explanation for that code for this challenge with NO usage example. Your answer should start with the data structure or technique used to solve this problem, then send the code then the detailed explanation"
       },
       {
         role: "user",
