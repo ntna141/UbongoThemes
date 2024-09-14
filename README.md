@@ -1,6 +1,3 @@
-Here's an updated `README.md` file based on the information you provided:
-
-```markdown
 # UbongoThemes Setup on Amazon EC2
 
 This guide explains how to pull the UbongoThemes repository onto an Amazon EC2 instance, set up the environment, install dependencies, and start the application using `pm2`.
