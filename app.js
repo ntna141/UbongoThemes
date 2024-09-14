@@ -1,19 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const OpenAI = require('openai');
-const http = require('http');
-const { Server } = require('socket.io');
 const path = require('path');
 require('dotenv').config();
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
 
 // Middleware
 app.use(cors());
@@ -34,6 +25,96 @@ if (!process.env.OPENAI_API_KEY) {
   process.exit(1);
 }
 
+const themes = ['Our school',
+'People in our home (nuclear family)',
+'Our community',
+'The human body and health',
+'Weather',
+'Accidents and safety',
+'Living together',
+'Food and nutrition',
+'Our transport',
+'Things we make',
+'Our environment',
+'Peace and security',
+'Our school and neighbourhood',
+'Our home and community',
+'Transport in our community',
+'Child protection',
+'Measures',
+'Recreation, festivals and holidays',
+'Our sub-county/division',
+'Our environment in our sub-county division',
+'Environment and weather in our sub-county/division',
+'Living things: plants in our sub-county/division',
+'Managing resources in our sub-county/division',
+'Keeping peace in our sub-county/division',
+'Health in our sub-county/division',
+'Basic technology in our sub-county/division',
+'Energy in our sub-county/division',
+'Sets',
+'Numeracy',
+'Geometry',
+'Interpretation of graphs and data',
+'Measurements',
+'Algebra',
+'Livelihood in our sub-county/division',
+'Living things: animals in our sub-county/division',
+'Culture and gender in our sub-county/division',
+'Animals in our sub-county/division',
+'Vehicle repair and maintenance',
+'Print media',
+'Travelling',
+'Letter writing',
+'Communication - the post office, internet and telephone',
+'Culture',
+'Services (banking)',
+'Safety on the road',
+'Debating',
+'Family relationships',
+'Occupations - carpentry, baking, tailoring, keeping animals',
+'Hotels',
+'Using dictionary',
+'School holidays',
+'Examinations',
+'Electronic media',
+'Rights, responsibilities and freedom',
+'Environmental protection',
+'Ceremonies',
+'The environment',
+'Human health',
+'The human body',
+'Matter and energy',
+'Managing changes in the environment',
+'Science in human activities and occupation',
+'Community population and family life',
+'The world of living things',
+'Human body',
+'The community, population and family life',
+'Living together in uganda',
+'The east african community',
+'Major resources of east africa',
+'Transport and communication in east africa',
+'The road to independence in east africa',
+'Responsible living in the east african environment',
+'Location of africa on the map of the world',
+'Physical features',
+'Climate of africa',
+'Vegetation of africa',
+'The people of africa, ethnic groups and settlement patterns',
+'Foreign influence in africa',
+'Nationalism and the road to independent africa',
+'Post-independence africa',
+'Economic developments in africa',
+'Major world organisations',
+];
+
+// Check if required environment variables are set
+if (!process.env.OPENAI_API_KEY) {
+  console.error('OPENAI_API_KEY environment variable is not set');
+  process.exit(1);
+}
+
 // Shared state
 let sharedState = {
   gptResponse: '',
@@ -41,35 +122,13 @@ let sharedState = {
   autoAnalyze: false
 };
 
-// Socket.IO connection handling
-io.on('connection', (socket) => {
-  console.log('A user connected');
-
-  socket.on('getState', () => {
-    socket.emit('stateUpdate', sharedState);
-  });
-
-  socket.on('updateState', (newState) => {
-    sharedState = { ...sharedState, ...newState };
-    io.emit('stateUpdate', sharedState);
-  });
-
-  socket.on('disconnect', () => {
-    console.log('User disconnected');
-  });
-});
-
-app.post('/process_images', async (req, res) => {
+app.post('/transcribe_images', async (req, res) => {
   if (!req.body.images || req.body.images.length === 0) {
     return res.status(400).json({ error: 'No image data provided' });
   }
 
   try {
-    // Update shared state to indicate processing has started
-    sharedState.isLoading = true;
-    io.emit('stateUpdate', sharedState);
-
-    console.log('Sending request to OpenAI API...');
+    console.log('Sending transcription request to OpenAI API...');
     const messages = [
       {
         role: "system",
@@ -93,54 +152,52 @@ app.post('/process_images', async (req, res) => {
       }
     ];
 
-    const initialResponse = await openai.chat.completions.create({
+    const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: messages,
     });
 
-    console.log('Received initial response from OpenAI API');
-    const initialTranscript = initialResponse.choices[0].message.content;
+    console.log('Received transcription response from OpenAI API');
+    const transcript = response.choices[0].message.content;
 
-    // Send a follow-up request with the new prompt
-    console.log('Sending follow-up request to OpenAI API...');
-    const followUpMessages = [
-      ...messages,
+    res.json({ transcript: transcript });
+  } catch (error) {
+    console.error('Error transcribing images:', error.response?.data || error.message);
+    res.status(500).json({ error: error.message || 'An error occurred while transcribing the images.' });
+  }
+});
+
+// Route for theme analysis
+app.post('/analyze_theme', async (req, res) => {
+  if (!req.body.transcript) {
+    return res.status(400).json({ error: 'No transcript provided' });
+  }
+
+  try {
+    console.log('Sending theme analysis request to OpenAI API...');
+    const messages = [
       {
         role: "system",
-        content: "You are a helpful teacher who will provide the optimal solution to the code and an explanation for that code for this challenge with NO usage example. Your answer should start with the data structure or technique used to solve this problem, then send the code then the detailed explanation"
+        content: `You will decide if the transcript I sent you aligns with one of these themes: ${themes.join(", ")}. Pick the one most appropriate, and send back the name of the matching theme and the learning goal of the text, and NOTHING ELSE. It should look like "theme and objective"`
       },
       {
         role: "user",
-        content: initialTranscript
+        content: req.body.transcript
       }
     ];
 
-    const followUpResponse = await openai.chat.completions.create({
+    const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages: followUpMessages,
+      messages: messages,
     });
 
-    console.log('Received follow-up response from OpenAI API');
-    const finalResponse = followUpResponse.choices[0].message.content;
+    console.log('Received theme analysis response from OpenAI API');
+    const analyzedTheme = response.choices[0].message.content;
 
-    // Update shared state with the final response
-    sharedState.gptResponse = finalResponse;
-    sharedState.isLoading = false;
-    io.emit('stateUpdate', sharedState);
-
-    res.json({
-      initialTranscript: initialTranscript,
-      finalResponse: finalResponse
-    });
+    res.json({ analyzedTheme: analyzedTheme });
   } catch (error) {
-    console.error('Error processing images:', error.response?.data || error.message);
-
-    // Update shared state to indicate an error
-    sharedState.gptResponse = 'An error occurred while processing the images.';
-    sharedState.isLoading = false;
-    io.emit('stateUpdate', sharedState);
-
-    res.status(500).json({ error: error.message || 'An error occurred while processing the images.' });
+    console.error('Error analyzing theme:', error.response?.data || error.message);
+    res.status(500).json({ error: error.message || 'An error occurred while analyzing the theme.' });
   }
 });
 
@@ -149,4 +206,4 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
-module.exports = { app, server };
+module.exports = app;
